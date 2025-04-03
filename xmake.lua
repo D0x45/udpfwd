@@ -6,5 +6,5 @@ target("udpfwd")
     add_cflags("-Wall", "-Wpedantic")
     if is_os("windows") then
         add_links("ws2_32")
-        set_toolchain("mingw")
+        set_toolchains("mingw")
     end
