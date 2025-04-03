@@ -12,13 +12,18 @@ jobs:
     strategy:
       matrix:
         os: [windows-latest, ubuntu-latest]
-        arch: [x86_64]
+        arch: [x64]
         mode: [release]
 
     runs-on: ${{ matrix.os }}
 
     steps:
     - uses: actions/checkout@v3
+
+    - name: Set up MinGW
+      uses: egor-tensin/setup-mingw@v2
+      with:
+        platform: ${{ matrix.arch }}
 
     - name: Install xmake
       uses: xmake-io/github-action-setup-xmake@v1
