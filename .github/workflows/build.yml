@@ -32,7 +32,7 @@ jobs:
         xmake install --installdir=${{ github.workspace }}/dist
 
     - name: Upload artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: ${{ matrix.os }}-${{ matrix.arch }}-${{ matrix.mode }}
         path: ${{ github.workspace }}/dist/bin
