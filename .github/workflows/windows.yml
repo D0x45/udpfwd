@@ -24,6 +24,7 @@ jobs:
       uses: egor-tensin/setup-mingw@v2
       with:
         platform: ${{ matrix.arch }}
+        static: 0
 
     - name: Install xmake
       uses: xmake-io/github-action-setup-xmake@v1
