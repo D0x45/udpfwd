@@ -27,8 +27,6 @@ jobs:
         run: mkdir build
 
       - name: Configure CMake
-        env:
-          CC: clang
         run: cmake -B ./build -S ./
 
       - name: Build
