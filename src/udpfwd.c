@@ -9,9 +9,6 @@
 #include <string.h>
 #include <time.h>
 
-#include <winsock2.h>
-#include <ws2ipdef.h>
-
 #include <uv.h>
 
 static uv_loop_t *gEventLoop;
@@ -65,16 +62,18 @@ static void signal_handler(int signal) {
 }
 
 int main(int argc, char **argv) {
-	WSADATA wsa_data;
 	char tmp_addr_str[UDPFWD_IPSTR_LEN] = {0};
 	int allow_ipv6 = 1, allow_ipv4 = 1,
 		loopback_only = 0, // listen on [::1] instead of [::]
 		listen_port = 65535, tmp;
 
+#ifdef _WIN32
+	WSADATA wsa_data;
 	if (0 != WSAStartup(MAKEWORD(2, 2), &wsa_data)) {
 		fprintf(stderr, "WSAStartup() failed: %d\n", WSAGetLastError());
 		return EXIT_FAILURE;
 	}
+#endif // _WIN32
 
 	memset(&gDestAddr, 0, sizeof(gDestAddr));
 	memset(&gSrv4, 0, sizeof(gSrv4));
@@ -196,7 +195,9 @@ int main(int argc, char **argv) {
 		free(gSrv4.handle.data);
 	}
 
+#ifdef _WIN32
 	WSACleanup();
+#endif
 	return EXIT_SUCCESS;
 }
 

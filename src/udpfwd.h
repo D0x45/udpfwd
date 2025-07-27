@@ -2,8 +2,14 @@
 #define __UDPFWD_H__
 
 #include <time.h>
-#include <winsock2.h>
-#include <ws2ipdef.h>
+
+#ifdef _WIN32
+#  include <winsock2.h>
+#  include <ws2ipdef.h>
+#else
+#  include <netinet/in.h>
+#  include <arpa/inet.h>
+#endif // _WIN32
 
 #include <uv.h>
 
