@@ -27,10 +27,12 @@ jobs:
         run: mkdir build
 
       - name: Configure CMake
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Release .
+        run: cmake -B ./build -S ./
+        env:
+          CC: clang
 
       - name: Build
-        run: cmake --build build
+        run: cmake --build ./build --config Release
 
       - name: Publish Artifacts
         uses: actions/upload-artifact@v4
