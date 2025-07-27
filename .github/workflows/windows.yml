@@ -19,7 +19,7 @@ jobs:
           submodules: 'recursive'
 
       - name: Install MinGW
-        run: choco install mingw-w64
+        run: choco install mingw
 
       - name: Set up CMake
         uses: jwlawson/actions-setup-cmake@v2
