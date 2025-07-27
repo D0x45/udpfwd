@@ -33,10 +33,11 @@ jobs:
         run: cmake -B ./build -S ./
 
       - name: Build
-        run: cmake --build ./build \
-              --config Release \
-              -DCMAKE_CXX_COMPILER=g++ \
-              -DCMAKE_C_COMPILER=gcc
+        run: |
+          cmake --build ./build \
+            --config Release \
+            -DCMAKE_CXX_COMPILER=g++ \
+            -DCMAKE_C_COMPILER=gcc
 
       - name: Publish Artifacts
         uses: actions/upload-artifact@v4
