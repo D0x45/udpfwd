@@ -269,11 +269,11 @@ static void dst_on_recv(uv_udp_t *this, ssize_t nread, const uv_buf_t *buf,
 	udpfwd_inbound_info *origin = (udpfwd_inbound_info *)this->data;
 
 	if (nread < 0)
-		goto srv_recv_print_err;
+		goto dst_recv_print_err;
 
 	// empty packets
 	if (nread == 0)
-		goto srv_recv_free_buf;
+		goto dst_recv_free_buf;
 
 	// activity on the connection makes it alive
 	origin->last_trx = time(NULL);
@@ -304,9 +304,9 @@ static void dst_on_recv(uv_udp_t *this, ssize_t nread, const uv_buf_t *buf,
 	}
 
 	free(send_req);
-srv_recv_print_err:
+dst_recv_print_err:
 	fprintf(stderr, "*** dst_on_recv(): libuv: %s\n", uv_strerror(nread));
-srv_recv_free_buf:
+dst_recv_free_buf:
 	buf_free(buf);
 }
 
