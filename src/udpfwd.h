@@ -1,38 +1,16 @@
 #ifndef __UDPFWD_H__
 #define __UDPFWD_H__
 
-#include <stdint.h>
+#include <time.h>
+#include <winsock2.h>
+#include <ws2ipdef.h>
 
-#ifdef _WIN32
-#  include <winsock2.h>
-#  include <ws2ipdef.h>
-#  include <ws2tcpip.h>
-#  include <processthreadsapi.h>
-#  include <errhandlingapi.h>
-#  include <synchapi.h>
-#  define UDPFWD_THREAD_API DWORD WINAPI
-typedef SOCKET udpfwd_sockfd;
-typedef HANDLE udpfwd_thread;
-#else
-#  include <arpa/inet.h>
-#  include <unistd.h>
-#  include <pthread.h>
-#  define UDPFWD_THREAD_API void*
-#  ifndef INVALID_SOCKET
-#    define INVALID_SOCKET (-1)
-#  endif
-#  ifndef closesocket
-#    define closesocket(fd) close(fd);
-#  endif
-typedef int udpfwd_sockfd;
-typedef pthread_t udpfwd_thread;
-#endif // _WIN32
+#include <uv.h>
 
 enum {
     UDPFWD_MAX_CONNS   = 60,
-    UDPFWD_PACKET_SIZE = 68608,
     UDPFWD_IPSTR_LEN   = 45 + 1 + 5 + 1,
-    UDPFWD_CONN_TTL    = 10,
+    UDPFWD_CONN_TTL    = 15,
 };
 
 typedef union {
@@ -47,25 +25,22 @@ typedef struct {
 
 typedef struct {
     udpfwd_sa     sa;
-    udpfwd_sockfd fd;
+    uv_udp_t      handle;
 } udpfwd_conn;
 
 typedef struct {
-    udpfwd_thread   handle;
-    udpfwd_addrinfo *dst;
-    udpfwd_conn     *listen;
-    int             *keep_running;
-    int              thread_id;
-} udpfwd_wdata;
+    const uv_udp_t *srv_handle; // the server socket this connection is on
+    udpfwd_addrinfo addr;       // origin client's address
+    uv_udp_t        dst_handle; // the socket that is connected to destination
+    time_t          last_trx;   // last transmission time
+} udpfwd_inbound_info;
 
-void udpfwd_perror(const char* msg);
-void udpfwd_nonblock(udpfwd_sockfd fd);
-int udpfwd_pton(udpfwd_sa *dst, const char *src);
-int udpfwd_ntop(char *dst, const udpfwd_sa *src);
-
-const char *udpfwd_sa_str(const udpfwd_sa *src);
-int udpfwd_sa_is_valid(const struct sockaddr *p);
-
-UDPFWD_THREAD_API udpfwd_worker_fn(void *param);
+typedef struct {
+    // this is not a deep copy. it's like a CoW. the inner buffer (->base)
+    // must be freed separately
+    uv_buf_t             buffer;
+    udpfwd_inbound_info *origin;
+    const char          *dst_addr_str;
+} udpfwd_send_req_data;
 
 #endif // __UDPFWD_H__
