@@ -7,9 +7,6 @@ on:
   pull_request:
     branches:
       - master
-strategy:
-  matrix:
-    compiler: [gcc, clang]
 
 jobs:
   build:
@@ -30,9 +27,9 @@ jobs:
         run: mkdir build
 
       - name: Configure CMake
-        run: cmake -B ./build -S ./
         env:
           CC: clang
+        run: cmake -B ./build -S ./
 
       - name: Build
         run: cmake --build ./build --config Release
