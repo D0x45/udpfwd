@@ -30,12 +30,12 @@ jobs:
         run: mkdir build
 
       - name: Configure CMake
-        env:
-          CMAKE_C_COMPILER: gcc
-          CMAKE_CXX_COMPILER: g++
         run: cmake -B ./build -S ./
 
       - name: Build
+        env:
+          CMAKE_C_COMPILER: gcc
+          CMAKE_CXX_COMPILER: g++
         run: cmake --build ./build --config Release
 
       - name: Publish Artifacts
