@@ -24,13 +24,13 @@ jobs:
           cmake-version: 'latest'
 
       - name: Create build directory
-        run: mkdir build && cd build
+        run: mkdir build
 
       - name: Configure CMake
-        run: cmake .. -DCMAKE_BUILD_TYPE=Release
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release .
 
       - name: Build
-        run: cmake --build . --config Release
+        run: cmake --build build
 
       - name: Publish Artifacts
         uses: actions/upload-artifact@v4
