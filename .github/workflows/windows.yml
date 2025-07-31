@@ -18,15 +18,11 @@ jobs:
         with:
           submodules: 'recursive'
 
-      # https://github.com/actions/runner-images/discussions/7998
-      - uses: msys2/setup-msys2@v2
+      - name: Set up MinGW
+        uses: egor-tensin/setup-mingw@v2
         with:
-          update: true
-          install: >-
-            mingw-w64-x86_64-ninja
-
-      - name: Put MSYS2_MinGW64 on PATH
-        run: echo "D:/a/_temp/msys64/mingw64/bin" >> $GITHUB_PATH
+          platform: x64
+          static: 0
 
       - name: Set up CMake
         uses: jwlawson/actions-setup-cmake@v2
