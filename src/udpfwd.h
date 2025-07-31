@@ -31,13 +31,14 @@ typedef struct {
 
 typedef struct {
     udpfwd_sa     sa;
-    uv_udp_t      handle;
+    uv_udp_t     *handle;
 } udpfwd_conn;
 
 typedef struct {
     const uv_udp_t *srv_handle; // the server socket this connection is on
     udpfwd_addrinfo addr;       // origin client's address
-    uv_udp_t        dst_handle; // the socket that is connected to destination
+								// dst_handle's memory must be freed by the on_close function.
+    uv_udp_t       *dst_handle; // the socket that is connected to destination
     time_t          last_trx;   // last transmission time
 } udpfwd_inbound_info;
 

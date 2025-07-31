@@ -11,10 +11,10 @@
 
 #include <uv.h>
 
-static uv_loop_t *gEventLoop;
+static uv_signal_t     gSignal;
 static udpfwd_addrinfo gDestAddr;
-static udpfwd_conn gSrv4, // udp server on ipv4 stack
-	gSrv6;				  // udp server on ipv6 stack
+static udpfwd_conn     gSrv4, // udp server on ipv4 stack
+					   gSrv6; // udp server on ipv6 stack
 
 static const char *gOptsShort = "d:p:64lh?";
 static struct option gOptsLong[] = {
@@ -46,18 +46,36 @@ static void dst_on_recv(uv_udp_t *handle, ssize_t nread, const uv_buf_t *buf,
 						const struct sockaddr *addr, unsigned flags);
 
 static void on_send(uv_udp_send_t *req, int status);
+
 static void on_close(uv_handle_t *handle) {
-	fputs("udp handle closed.\r\n", stderr);
+	fprintf(stderr, "*** handle (%p) closed.\r\n", handle);
+
+	if (handle->type == UV_UDP) {
+		// all uv_udp_t handles are allocated by this program, so...
+		free(handle);
+	}
 }
 
-static void signal_handler(int signal) {
-	fprintf(stdout, "Signal %d received. stopping event loop...\r\n", signal);
-	if (gEventLoop != NULL) {
-		uv_udp_recv_stop(&gSrv4.handle);
-		uv_udp_recv_stop(&gSrv6.handle);
-		uv_close((uv_handle_t *)&gSrv4.handle, on_close);
-		uv_close((uv_handle_t *)&gSrv6.handle, on_close);
-		uv_stop(gEventLoop);
+static void on_uv_walk(uv_handle_t* handle, void* arg) {
+    uv_close(handle, on_close);
+}
+
+// https://stackoverflow.com/questions/25615340/closing-libuv-handles-correctly
+static void signal_handler(uv_signal_t *handle, int signum) {
+	fprintf(stdout, "*** signal %d received. stopping event loop...\r\n", signum);
+
+	if (gSrv4.handle) {
+		fprintf(stderr, "*** stopping udp4 server (%p)...\r\n", gSrv4.handle);
+		uv_udp_recv_stop(gSrv4.handle);
+	}
+
+	if (gSrv6.handle) {
+		fprintf(stderr, "*** stopping udp6 server (%p)...\r\n", gSrv6.handle);
+		uv_udp_recv_stop(gSrv6.handle);
+	}
+
+	if (UV_EBUSY == uv_loop_close(handle->loop)) {
+		uv_walk(handle->loop, on_uv_walk, NULL);
 	}
 }
 
@@ -78,6 +96,7 @@ int main(int argc, char **argv) {
 	memset(&gDestAddr, 0, sizeof(gDestAddr));
 	memset(&gSrv4, 0, sizeof(gSrv4));
 	memset(&gSrv6, 0, sizeof(gSrv6));
+	memset(&gSignal, 0, sizeof(gSignal));
 
 	while (1) {
 		tmp = getopt_long(argc, argv, gOptsShort, gOptsLong, NULL);
@@ -87,16 +106,18 @@ int main(int argc, char **argv) {
 		}
 
 		if (tmp == '?' || tmp == 'h') {
-			fputs("--destination (-d)\t the destination address in `addr:port` "
-				  "format. note that "
-				  "ipv6 addresses must be wrapped in square brackets (e.g. "
-				  "`[::1]`).\r\n"
-				  "\t\tthis option also supports domain names.\r\n"
-				  "--listen-port (-p)\t the port to listen on\r\n"
-				  "--no-ipv4 (-6)\t listen on the ipv6 stack only.\r\n"
-				  "--no-ipv6 (-4)\t listen on the ipv4 stack only.\r\n"
-				  "--loopback (-l)\t listen on loopback only. (e.g. 127.0.0.1 "
-				  "and [::1])\r\n",
+			fputs(
+				  "udpfwd - yet another udp forwarder (just use socat :p)\n\n"
+				  "USAGE:\n"
+				  "--destination (-d)\t the destination address in `addr:port`\n"
+				  "\t\t\t format. note that ipv6 addresses must be wrapped in square\n"
+				  "\t\t\t brackets (e.g. `[::1]:1234`).\n"
+				  "\t\t\t this option also supports domain names.\n"
+				  "--listen-port (-p)\t the port to listen on\n"
+				  "--no-ipv4 (-6)\t\t listen on the ipv6 stack only.\n"
+				  "--no-ipv6 (-4)\t\t listen on the ipv4 stack only.\n"
+				  "--loopback (-l)\t\t listen on loopback only. (e.g. 127.0.0.1 "
+				  "and [::1])\n\n",
 				  stdout);
 			return EXIT_FAILURE;
 		}
@@ -136,12 +157,6 @@ int main(int argc, char **argv) {
 		return EXIT_FAILURE;
 	}
 
-	gEventLoop = uv_default_loop();
-	if (!gEventLoop) {
-		fputs("uv_default_loop() returned NULL\r\n", stderr);
-		return EXIT_FAILURE;
-	}
-
 	// the last byte makes the difference
 	*(((uint8_t *)&gSrv6.sa.v6.sin6_addr) + 15) = loopback_only;
 	*((uint32_t *)&gSrv4.sa.v4.sin_addr) =
@@ -160,40 +175,46 @@ int main(int argc, char **argv) {
 
 	printf("Forwarding to:\n%s\n", gDestAddr.str);
 
-	if (signal(SIGINT, signal_handler) == SIG_ERR) {
-		perror("signal(SIGINT, ...)");
+	tmp = uv_signal_init(uv_default_loop(), &gSignal);
+	if (tmp) {
+		fprintf(stderr, "uv_signal_init(): %s\r\n", uv_strerror(tmp));
 		return EXIT_FAILURE;
 	}
 
+	uv_signal_start(&gSignal, signal_handler, SIGINT);
+
 	if (allow_ipv4) {
-		uv_udp_init(gEventLoop, &gSrv4.handle);
-		uv_udp_bind(&gSrv4.handle, (const struct sockaddr *)&gSrv4.sa, 0);
-		uv_udp_recv_start(&gSrv4.handle, (uv_alloc_cb)buf_alloc, srv_on_recv);
-		// allocate an array for active connections handling
-		gSrv4.handle.data =
-			(void *)calloc(UDPFWD_MAX_CONNS, sizeof(udpfwd_inbound_info));
+		gSrv4.handle = (uv_udp_t *)calloc(1, sizeof(uv_udp_t) +
+							(sizeof(udpfwd_inbound_info) * UDPFWD_MAX_CONNS));
+
+		uv_udp_init(uv_default_loop(), gSrv4.handle);
+		uv_udp_bind(gSrv4.handle, (const struct sockaddr *)&gSrv4.sa, 0);
+		uv_udp_recv_start(gSrv4.handle, (uv_alloc_cb)buf_alloc, srv_on_recv);
+
+		gSrv4.handle->data = (void *)(((unsigned long long)(gSrv4.handle)) +
+										sizeof(uv_udp_t));
+
+		fprintf(stderr, "*** udp4 handle: %p\r\n", gSrv4.handle);
 	}
 
 	if (allow_ipv6) {
-		uv_udp_init(gEventLoop, &gSrv6.handle);
-		uv_udp_bind(&gSrv6.handle, (const struct sockaddr *)&gSrv6.sa,
+		gSrv6.handle = (uv_udp_t *)calloc(1, sizeof(uv_udp_t) +
+							(sizeof(udpfwd_inbound_info) * UDPFWD_MAX_CONNS));
+
+		uv_udp_init(uv_default_loop(), gSrv6.handle);
+		uv_udp_bind(gSrv6.handle, (const struct sockaddr *)&gSrv6.sa,
 					UV_UDP_IPV6ONLY);
-		uv_udp_recv_start(&gSrv6.handle, (uv_alloc_cb)buf_alloc, srv_on_recv);
-		// allocate an array for active connections handling
-		gSrv6.handle.data =
-			(void *)calloc(UDPFWD_MAX_CONNS, sizeof(udpfwd_inbound_info));
+		uv_udp_recv_start(gSrv6.handle, (uv_alloc_cb)buf_alloc, srv_on_recv);
+
+		gSrv6.handle->data = (void *)(((unsigned long long)(gSrv6.handle)) +
+										sizeof(uv_udp_t));
+
+		fprintf(stderr, "*** udp6 handle: %p\r\n", gSrv6.handle);
 	}
 
-	uv_run(gEventLoop, UV_RUN_DEFAULT);
-	uv_loop_close(gEventLoop);
-
-	if (gSrv6.handle.data != NULL) {
-		free(gSrv6.handle.data);
-	}
-
-	if (gSrv4.handle.data != NULL) {
-		free(gSrv4.handle.data);
-	}
+	uv_run(uv_default_loop(), UV_RUN_DEFAULT);
+	uv_loop_close(uv_default_loop());
+	uv_library_shutdown();
 
 #ifdef _WIN32
 	WSACleanup();
@@ -203,7 +224,6 @@ int main(int argc, char **argv) {
 
 static void buf_alloc(uv_handle_t *handle, size_t suggested_size,
 					  uv_buf_t *buf) {
-	// TODO: use some other allocation library (arena allcoator?)
 	buf->base = (char *)malloc(suggested_size);
 	buf->len = suggested_size;
 }
@@ -228,9 +248,16 @@ static udpfwd_inbound_info *origin_find_in_list(udpfwd_inbound_info *list,
 				first_free_index = i;
 			}
 
-			if (list[i].last_trx != 0) {
-				uv_udp_recv_stop(&list[i].dst_handle);
-				uv_close((uv_handle_t *)&list[i].dst_handle, on_close);
+			// this handle is active but stale
+			if (list[i].dst_handle != NULL) {
+				fprintf(stderr,
+						"*** udp_recv_stop(handle: %p) i=%d, origin=%s\r\n",
+						list[i].dst_handle, i, list[i].addr.str
+						);
+				uv_udp_recv_stop(list[i].dst_handle);
+				uv_close((uv_handle_t *)list[i].dst_handle, on_close);
+				// do not free the allocated memory for the handle here!
+				// on_close() will take care of that.
 				memset(&list[i], 0, sizeof(udpfwd_inbound_info));
 			}
 		}
@@ -248,15 +275,20 @@ static udpfwd_inbound_info *origin_find_in_list(udpfwd_inbound_info *list,
 				// this function checks for correct sa_family and size
 				(const udpfwd_sa *)addr);
 		j->srv_handle = srv_handle;
-		j->dst_handle.data = (void *)j; // keep a ref to itself for callbacks
-		uv_udp_init(gEventLoop, &j->dst_handle);
-		uv_udp_connect(&j->dst_handle, (const struct sockaddr *)&gDestAddr.sa);
-		uv_udp_recv_start(&j->dst_handle, buf_alloc, dst_on_recv);
+		j->dst_handle = (uv_udp_t *)calloc(1, sizeof(uv_udp_t));
+
+		fprintf(stderr, "*** new dest handle=%p, i=%d, origin=%s\r\n",
+					j->dst_handle, first_free_index, j->addr.str);
+
+		j->dst_handle->data = (void *)j; // keep a ref to itself for callbacks
+		uv_udp_init(srv_handle->loop, j->dst_handle);
+		uv_udp_connect(j->dst_handle, (const struct sockaddr *)&gDestAddr.sa);
+		uv_udp_recv_start(j->dst_handle, buf_alloc, dst_on_recv);
 		j->last_trx = now;
 	}
 
 	if (j == NULL) {
-		fputs("maximum concurrent connection reached!\r\n", stderr);
+		fputs("*** j=NULL; max active connections reached!\r\n", stderr);
 	}
 
 	return j;
@@ -267,9 +299,15 @@ static void dst_on_recv(uv_udp_t *this, ssize_t nread, const uv_buf_t *buf,
 	uv_udp_send_t *send_req = NULL;
 	udpfwd_send_req_data *req_data = NULL;
 	udpfwd_inbound_info *origin = (udpfwd_inbound_info *)this->data;
+	time_t now = time(0);
 
 	if (nread < 0)
 		goto dst_recv_print_err;
+
+	if ((now-origin->last_trx) >= UDPFWD_CONN_TTL) {
+		// just ignore it, closing it here again causes some double close
+		goto dst_recv_free_buf;
+	}
 
 	// empty packets
 	if (nread == 0)
@@ -299,13 +337,14 @@ static void dst_on_recv(uv_udp_t *this, ssize_t nread, const uv_buf_t *buf,
 
 	if (nread == 0) {
 		// buf->base must not be freed
-		// on_send will free them all at once
+		// on_send() will free them all at once
 		return;
 	}
 
 	free(send_req);
 dst_recv_print_err:
-	fprintf(stderr, "*** dst_on_recv(): libuv: %s\n", uv_strerror(nread));
+	fprintf(stderr, "*** libuv: %s (dst_handle: %p)\n", uv_strerror(nread),
+				this);
 dst_recv_free_buf:
 	buf_free(buf);
 }
@@ -313,12 +352,12 @@ dst_recv_free_buf:
 static void on_send(uv_udp_send_t *req, int status) {
 	const udpfwd_send_req_data *data = (const udpfwd_send_req_data *)req->data;
 
-	if (status < 0) {
-		fprintf(stderr, "*** on_send(): libuv: %s\n", uv_strerror(status));
+	if (status < 0 || data->buffer.len <= 0) {
+		fprintf(stderr, "*** libuv: %s (on_send)\n", uv_strerror(status));
 		goto skip_printing_status;
 	}
 
-	fprintf(stdout, "--> SENT %6lu BYTES TO %s\r\n", data->buffer.len,
+	fprintf(stdout, "--> SENT %6lu BYTES TO   %s\r\n", data->buffer.len,
 			data->dst_addr_str);
 
 	// update actual transmission time for origin conn when send succeeds
@@ -367,7 +406,7 @@ static void srv_on_recv(uv_udp_t *this, ssize_t nread, const uv_buf_t *buf,
 	send_req->data = (void *)req_data;
 
 	// send from [NEW_SOCKET] -> [DESTINATION]
-	nread = uv_udp_send(send_req, &origin->dst_handle, &req_data->buffer, 1,
+	nread = uv_udp_send(send_req, origin->dst_handle, &req_data->buffer, 1,
 						// For connected UDP handles, addr must be set to NULL,
 						// otherwise it will return UV_EISCONN error.
 						NULL, on_send);
@@ -380,7 +419,8 @@ static void srv_on_recv(uv_udp_t *this, ssize_t nread, const uv_buf_t *buf,
 
 	free(send_req);
 srv_recv_print_err:
-	fprintf(stderr, "*** srv_on_recv(): libuv: %s\n", uv_strerror(nread));
+	fprintf(stderr, "*** libuv: %s (srv_handle: %p)\n", uv_strerror(nread),
+					this);
 srv_recv_free_buf:
 	buf_free(buf);
 }
