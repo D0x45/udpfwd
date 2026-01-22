@@ -1,6 +1,3 @@
 [submodule "lib/libuv"]
 	path = lib/libuv
 	url = https://github.com/libuv/libuv.git
-[submodule "lib/libstun"]
-	path = lib/libstun
-	url = git@github.com:D0x45/libstun.git
